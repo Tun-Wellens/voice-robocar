@@ -1,5 +1,5 @@
-# Use the official ROS 2 Jazzy base image (Ubuntu 24.04 Noble)
-FROM osrf/ros:jazzy-desktop
+# Use the multi-arch ROS 2 Jazzy base image (Ubuntu 24.04 Noble)
+FROM ros:jazzy-ros-base
 
 # Set the working directory
 WORKDIR /workspace/ros2_ws
