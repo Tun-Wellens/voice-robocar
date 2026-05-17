@@ -1,0 +1,7 @@
+install/
+build/
+log/
+.env
+__pycache__/
+
+notes/

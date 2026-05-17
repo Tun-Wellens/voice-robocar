@@ -1,0 +1,8 @@
+# requirements.txt
+google-genai
+requests
+sounddevice
+soundfile
+numpy
+scipy
+python-dotenv
