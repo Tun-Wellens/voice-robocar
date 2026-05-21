@@ -27,7 +27,7 @@ class GeminiAssistant:
         self.client = genai.Client(
             api_key=os.environ.get("GEMINI_API_KEY"),
         )
-        self.model = "gemini-3-flash-preview"
+        self.model = "gemini-3.5-flash"
         self.chat = self.client.chats.create(
             model=self.model,
             config=types.GenerateContentConfig(
