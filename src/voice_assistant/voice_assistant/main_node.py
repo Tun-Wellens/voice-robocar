@@ -25,7 +25,7 @@ class VoiceAssistantNode(Node):
         self.current_path = None
         
         # ROS 2 Subscriptions
-        self.gnss_sub = self.create_subscription(GNSS, '/robocar/gnss', self.gnss_callback, 10)
+        self.gnss_sub = self.create_subscription(GNSS, '/sensors/gnss', self.gnss_callback, 10)
         self.path_sub = self.create_subscription(Path, '/robocar/path', self.path_callback, 10)
 
     def gnss_callback(self, msg):
