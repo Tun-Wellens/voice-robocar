@@ -8,6 +8,8 @@ WORKDIR /workspace/ros2_ws
 # - libasound2-dev, alsa-utils, libportaudio2 are required for recording/playing sound
 RUN apt-get update && apt-get install -y \
     python3-pip \
+    python3-dev \
+    build-essential \
     libasound2-dev \
     alsa-utils \
     libportaudio2 \
@@ -19,8 +21,9 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt /workspace/
 RUN pip3 install --no-cache-dir --break-system-packages -r /workspace/requirements.txt
 
-# 3. Copy the ROS 2 source code
+# 3. Copy the ROS 2 source code and models
 COPY src/ /workspace/ros2_ws/src/
+COPY models/ /workspace/models/
 
 # 4. Build the ROS 2 workspace for Jazzy
 RUN /bin/bash -c "source /opt/ros/jazzy/setup.bash && colcon build --symlink-install"

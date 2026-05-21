@@ -6,6 +6,10 @@ import io
 import queue
 import sounddevice as sd
 import soundfile as sf
+import numpy as np
+import webrtcvad
+import openwakeword
+from openwakeword.model import Model
 from robocar_msgs.msg import GNSS, Path
 
 from voice_assistant.gemini_llm import GeminiAssistant
@@ -29,6 +33,16 @@ class VoiceAssistantNode(Node):
 
     def path_callback(self, msg):
         self.current_path = msg
+
+def play_ding():
+    try:
+        fs = 16000
+        t = np.linspace(0, 0.2, int(fs * 0.2), endpoint=False)
+        samples = (np.sin(2 * np.pi * 880 * t) * 0.1).astype(np.float32)
+        sd.play(samples, samplerate=fs)
+        sd.wait()
+    except Exception as e:
+        print(f"Could not play ding: {e}")
 
 def setup_audio_device():
     """
@@ -67,77 +81,109 @@ def main(args=None):
 
     llm = GeminiAssistant()
     
+    print("Loading Wake Word Model...")
+    owwModel = Model(wakeword_model_paths=["/workspace/models/moien_junior.onnx"])
+    
+    vad = webrtcvad.Vad(3) # High sensitivity
+    
     print("\n" + "="*50)
-    print("Junior Voice Assistant is Ready!")
+    print("Junior Voice Assistant is Ready! Listening for 'Moien Junior'...")
     print("="*50)
 
     try:
-        while True:
-            # Push-to-talk trigger
-            input("\n[Push-to-Talk] Press ENTER to START recording...")
-            
-            target_device = setup_audio_device()
+        target_device = setup_audio_device()
+        samplerate = 16000 # Required by OpenWakeWord
+        blocksize = 1280   # Standard blocksize for OpenWakeWord
+        
+        q = queue.Queue()
 
-            try:
-                device_info = sd.query_devices(target_device, 'input')
-            except Exception as e:
-                print(f"Error accessing device {target_device}. Falling back to default. Error: {e}")
-                target_device = sd.default.device[0]
-                device_info = sd.query_devices(target_device, 'input')
+        def callback(indata, frames, time, status):
+            if status:
+                print(status, file=sys.stderr)
+            q.put(indata.copy())
 
-            samplerate = int(device_info['default_samplerate'])
-            
-            print(f"Using Microphone: {device_info['name']} (Sample Rate: {samplerate})")
-            
-            q = queue.Queue()
+        state = "IDLE"
+        audio_buffer = []
+        silence_frames = 0
+        max_silence_frames = int(1.5 * samplerate / blocksize) # 1.5 seconds
 
-            def callback(indata, frames, time, status):
-                if status:
-                    print(status, file=sys.stderr)
-                q.put(indata.copy())
-
-            # Initialize and start the audio input stream
-            stream = sd.InputStream(device=target_device, samplerate=samplerate, channels=1, callback=callback)
-            with stream:
-                input("[Recording...] Press ENTER to STOP recording...\n")
+        # Initialize and start the audio input stream
+        stream = sd.InputStream(device=target_device, samplerate=samplerate, channels=1, dtype='int16', blocksize=blocksize, callback=callback)
+        with stream:
+            while True:
+                chunk = q.get()
                 
-            print("Processing audio...")
+                if state == "IDLE":
+                    # Check for wake word
+                    audio_frame = chunk.flatten()
+                    prediction = owwModel.predict(audio_frame)
+                    
+                    # The prediction dict is {model_name: score}
+                    score = list(prediction.values())[0]
+                    print(f"Listening... Model Score: {score:.4f}", end='\r')
+                    if score > 0.05:
+                        print("\n[Wake Word Detected!] Listening for command...")
+                        play_ding()
+                        state = "RECORDING"
+                        audio_buffer = []
+                        silence_frames = 0
+                        
+                elif state == "RECORDING":
+                    audio_buffer.append(chunk)
+                    
+                    # WebRTC VAD check
+                    chunk_bytes = chunk.tobytes()
+                    is_speech = False
+                    for i in range(0, 2560, 640):
+                        vad_chunk = chunk_bytes[i:i+640]
+                        if vad.is_speech(vad_chunk, samplerate):
+                            is_speech = True
+                            break
+                    
+                    if is_speech:
+                        silence_frames = 0
+                    else:
+                        silence_frames += 1
+                        
+                    if silence_frames >= max_silence_frames:
+                        print("[Silence Detected] Processing command...")
+                        state = "PROCESSING"
+                        
+                        # Empty remaining items in queue so we don't process delayed audio
+                        with q.mutex:
+                            q.queue.clear()
+                            
+                        # Aggregate recorded audio chunks
+                        audio_concat = np.concatenate(audio_buffer, axis=0)
+                        
+                        duration = len(audio_concat) / samplerate
+                        print(f"Recorded {len(audio_concat)} frames ({duration:.2f} seconds).")
 
-            # Aggregate recorded audio chunks
-            audio_data = []
-            while not q.empty():
-                audio_data.append(q.get())
-            
-            import numpy as np
-            if len(audio_data) == 0:
-                continue
-                
-            audio_concat = np.concatenate(audio_data, axis=0)
-            
-            duration = len(audio_concat) / samplerate
-            print(f"Recorded {len(audio_concat)} frames ({duration:.2f} seconds).")
+                        # Convert our raw audio data into a standard WAV format in memory so the Speech-to-Text engine can read it
+                        wav_io = io.BytesIO()
+                        sf.write(wav_io, audio_concat, samplerate, format='WAV', subtype='PCM_16')
+                        wav_bytes = wav_io.getvalue()
+                        
+                        # STT inference
+                        print("Transcribing (LuxASR)...")
+                        text = stt_luxasr.transcribe(wav_bytes)
+                        if not text:
+                            print("Failed to transcribe or no speech detected.")
+                        else:
+                            print(f"User: '{text}'")
 
-            # Encode raw PCM to in-memory WAV buffer for STT consumption
-            wav_io = io.BytesIO()
-            sf.write(wav_io, audio_concat, samplerate, format='WAV', subtype='PCM_16')
-            wav_bytes = wav_io.getvalue()
-            
-            # STT inference
-            print("Transcribing (LuxASR)...")
-            text = stt_luxasr.transcribe(wav_bytes)
-            if not text:
-                print("Failed to transcribe or no speech detected.")
-                continue
-            
-            print(f"User: '{text}'")
+                            # LLM generation
+                            print("Thinking (Gemini)...")
+                            response = llm.process_prompt(text, node)
+                            print(f"Assistant: {response}")
 
-            # LLM generation
-            print("Thinking (Gemini)...")
-            response = llm.process_prompt(text, node)
-            print(f"Assistant: {response}")
-
-            # TTS execution
-            tts_zls.speak(response)
+                            # TTS execution
+                            tts_zls.speak(response)
+                            
+                        print("\nListening for 'Moien Junior'...")
+                        # Reset the wake word model state so it doesn't immediately trigger again
+                        owwModel.reset()
+                        state = "IDLE"
 
     except KeyboardInterrupt:
         print("\nShutting down Voice Assistant...")

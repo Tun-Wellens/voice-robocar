@@ -6,3 +6,5 @@ soundfile
 numpy
 scipy
 python-dotenv
+openwakeword
+webrtcvad
