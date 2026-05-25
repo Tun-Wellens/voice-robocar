@@ -5,6 +5,8 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     network_mode: "host"       # Allows ROS 2 DDS to find the real Robocar
+    ipc: host
+    pid: host
     stdin_open: true           # For interactive input() (Push-to-Talk)
     tty: true                  # Works with stdin_open to allow live keyboard inputs
     group_add:
