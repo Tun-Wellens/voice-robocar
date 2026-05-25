@@ -29,3 +29,39 @@ def reverse_geocode(lat, lon):
         return "Location not found."
     except Exception as e:
         return f"Error connecting to TomTom API: {e}"
+
+def search_nearby_poi(query, lat, lon, radius=5000, limit=3):
+    """
+    Searches for Points of Interest (POIs) near a given location 
+    using the TomTom Search API.
+    """
+    api_key = os.environ.get("TOMTOM_API_KEY")
+    if not api_key:
+        return "TomTom API key not found."
+
+    url = f"https://api.tomtom.com/search/2/search/{query}.json"
+    params = {
+        "key": api_key,
+        "lat": lat,
+        "lon": lon,
+        "radius": radius,
+        "limit": limit
+    }
+    
+    try:
+        response = requests.get(url, params=params, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        
+        results = data.get("results", [])
+        if results:
+            pois = []
+            for r in results:
+                name = r.get("poi", {}).get("name", "Unknown Name")
+                addr = r.get("address", {}).get("freeformAddress", "Unknown Address")
+                dist = r.get("dist", 0) # Distance is returned in meters
+                pois.append(f"{name} ({addr}, {dist:.0f}m away)")
+            return ", ".join(pois)
+        return f"No {query} found nearby."
+    except Exception as e:
+        return f"Error connecting to TomTom API: {e}"

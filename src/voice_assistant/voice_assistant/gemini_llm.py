@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from .tomtom_api import reverse_geocode
+from .tomtom_api import reverse_geocode, search_nearby_poi
 
 load_dotenv()
 
@@ -17,6 +17,20 @@ vehicle_tools = [
             types.FunctionDeclaration(
                 name="get_destination",
                 description="Retrieves the final destination the autonomous vehicle is currently routing to.",
+            ),
+            types.FunctionDeclaration(
+                name="search_nearby_poi",
+                description="Searches for nearby points of interest (POIs) like restaurants, gas stations, hospitals, etc.",
+                parameters=types.Schema(
+                    type="OBJECT",
+                    properties={
+                        "query": types.Schema(
+                            type="STRING",
+                            description="The type of place to search for, e.g., 'restaurant', 'gas station'."
+                        )
+                    },
+                    required=["query"]
+                )
             )
         ]
     )
@@ -61,6 +75,16 @@ class GeminiAssistant:
             elif func_name == "get_destination":
                 # TODO: Replace placeholder with actual path parsing logic
                 tool_result = {"destination_info": "We are routing to Kirchberg Campus."} 
+            elif func_name == "search_nearby_poi":
+                if ros_node.current_gnss is not None:
+                    # In newer google-genai, args might be accessed as attribute or dict
+                    query = getattr(function_call.args, "query", "") if hasattr(function_call.args, "query") else function_call.args.get("query", "")
+                    lat = ros_node.current_gnss.lat
+                    lon = ros_node.current_gnss.lon
+                    poi_results = search_nearby_poi(query, lat, lon)
+                    tool_result = {"pois": poi_results, "query": query}
+                else:
+                    tool_result = {"error": "GPS signal lost or not yet received. Cannot search for nearby POIs."}
             
             # Return the tool execution results to generate the final natural language response
             response = self.chat.send_message(
