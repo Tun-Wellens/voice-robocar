@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from .tomtom_api import reverse_geocode, search_nearby_poi
+from .weather_api import get_weather_forecast
 
 load_dotenv()
 
@@ -31,6 +32,10 @@ vehicle_tools = [
                     },
                     required=["query"]
                 )
+            ),
+            types.FunctionDeclaration(
+                name="get_weather_forecast",
+                description="Retrieves the current weather and daily forecast for the vehicle's current location.",
             )
         ]
     )
@@ -85,6 +90,14 @@ class GeminiAssistant:
                     tool_result = {"pois": poi_results, "query": query}
                 else:
                     tool_result = {"error": "GPS signal lost or not yet received. Cannot search for nearby POIs."}
+            elif func_name == "get_weather_forecast":
+                if ros_node.current_gnss is not None:
+                    lat = ros_node.current_gnss.lat
+                    lon = ros_node.current_gnss.lon
+                    weather_result = get_weather_forecast(lat, lon)
+                    tool_result = {"weather": weather_result}
+                else:
+                    tool_result = {"error": "GPS signal lost or not yet received. Cannot fetch weather."}
             
             # Return the tool execution results to generate the final natural language response
             response = self.chat.send_message(
