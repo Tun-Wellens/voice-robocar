@@ -60,8 +60,16 @@ def search_nearby_poi(query, lat, lon, radius=5000, limit=3):
                 name = r.get("poi", {}).get("name", "Unknown Name")
                 addr = r.get("address", {}).get("freeformAddress", "Unknown Address")
                 dist = r.get("dist", 0) # Distance is returned in meters
-                pois.append(f"{name} ({addr}, {dist:.0f}m away)")
-            return ", ".join(pois)
-        return f"No {query} found nearby."
+                lat = r.get("position", {}).get("lat")
+                lon = r.get("position", {}).get("lon")
+                pois.append({
+                    "name": name,
+                    "address": addr,
+                    "distance_meters": round(dist),
+                    "latitude": lat,
+                    "longitude": lon
+                })
+            return pois
+        return []
     except Exception as e:
         return f"Error connecting to TomTom API: {e}"
