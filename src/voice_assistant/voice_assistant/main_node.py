@@ -82,7 +82,16 @@ def main(args=None):
     llm = GeminiAssistant()
     
     print("Loading Wake Word Model...")
-    owwModel = Model(wakeword_model_paths=["/workspace/models/moien_junior.onnx"])
+    
+    import os
+    model_path = "/workspace/models/moien_junior.onnx"
+    if not os.path.exists(model_path):
+        # Fallback to the local repository structure when running natively.
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        repo_root = os.path.abspath(os.path.join(current_dir, "..", "..", ".."))
+        model_path = os.path.join(repo_root, "models", "moien_junior.onnx")
+
+    owwModel = Model(wakeword_model_paths=[model_path])
     
     vad = webrtcvad.Vad(3) # High sensitivity
     
