@@ -54,6 +54,14 @@ vehicle_tools = [
             types.FunctionDeclaration(
                 name="get_weather_forecast",
                 description="Retrieves the current weather and daily forecast for the vehicle's current location.",
+            ),
+            types.FunctionDeclaration(
+                name="turn_on_headlights",
+                description="Turns on the vehicle's headlights.",
+            ),
+            types.FunctionDeclaration(
+                name="turn_on_hazard_lights",
+                description="Turns on the vehicle's hazard lights (warning blinkers).",
             )
         ]
     )
@@ -67,13 +75,15 @@ class GeminiAssistant:
         self.model = "gemini-2.5-flash"
         self.log_publisher = None
         self.nav_publisher = None
+        self.cmd_publisher = None
         
         instruction = (
             "You are Junior, a context-aware Luxembourgish voice assistant inside an autonomous vehicle. "
             "Always respond in Luxembourgish. "
             "If the user asks to drive to a specific place, you must first call 'search_nearby_poi' "
             "to find its coordinates, and then immediately call 'start_navigation' using those coordinates. "
-            "Confirm to the user once autopilot is engaged."
+            "If the user asks to control the vehicle (like turning on lights or hazard lights), use the appropriate tool. "
+            "Confirm to the user once an action is taken or autopilot is engaged."
         )
         
         self.chat = self.client.chats.create(
@@ -103,6 +113,8 @@ class GeminiAssistant:
                 self.log_publisher = ros_node.create_publisher(String, '/assistant/logs', 10)
             if self.nav_publisher is None:
                 self.nav_publisher = ros_node.create_publisher(String, '/assistant/navigation_goal', 10)
+            if self.cmd_publisher is None:
+                self.cmd_publisher = ros_node.create_publisher(String, '/assistant/vehicle_commands', 10)
 
         response = self._send_message_with_retry(text)
         
@@ -175,6 +187,24 @@ class GeminiAssistant:
                         tool_result = {"weather": weather_result}
                     else:
                         tool_result = {"error": "GPS signal lost. Cannot fetch weather."}
+                        
+                elif func_name == "turn_on_headlights":
+                    if self.cmd_publisher is not None:
+                        cmd_msg = String()
+                        cmd_msg.data = json.dumps({"command": "headlights_on"})
+                        self.cmd_publisher.publish(cmd_msg)
+                        tool_result = {"status": "success", "message": "Headlights turned on."}
+                    else:
+                        tool_result = {"error": "ROS 2 publisher not initialized."}
+                        
+                elif func_name == "turn_on_hazard_lights":
+                    if self.cmd_publisher is not None:
+                        cmd_msg = String()
+                        cmd_msg.data = json.dumps({"command": "hazards_on"})
+                        self.cmd_publisher.publish(cmd_msg)
+                        tool_result = {"status": "success", "message": "Hazard lights turned on."}
+                    else:
+                        tool_result = {"error": "ROS 2 publisher not initialized."}
                 
                 # Publish log data to ROS 2 for the Streamlit dashboard
                 if self.log_publisher is not None:
