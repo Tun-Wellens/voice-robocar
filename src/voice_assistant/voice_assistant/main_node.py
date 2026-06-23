@@ -10,7 +10,8 @@ import numpy as np
 import webrtcvad
 import openwakeword
 from openwakeword.model import Model
-from robocar_msgs.msg import GNSS, Path
+from robocar_msgs.msg import GNSS
+from std_msgs.msg import String
 
 from voice_assistant.gemini_llm import GeminiAssistant
 from voice_assistant import stt_luxasr
@@ -22,17 +23,13 @@ class VoiceAssistantNode(Node):
         
         # State caching for vehicle telemetry
         self.current_gnss = None
-        self.current_path = None
         
-        # ROS 2 Subscriptions
+        # ROS 2 Subscriptions and Publishers
         self.gnss_sub = self.create_subscription(GNSS, '/sensors/gnss', self.gnss_callback, 10)
-        self.path_sub = self.create_subscription(Path, '/robocar/path', self.path_callback, 10)
+        self.log_publisher = self.create_publisher(String, '/assistant/logs', 10)
 
     def gnss_callback(self, msg):
         self.current_gnss = msg
-
-    def path_callback(self, msg):
-        self.current_path = msg
 
 def play_ding():
     try:
@@ -173,9 +170,10 @@ def main(args=None):
                         sf.write(wav_io, audio_concat, samplerate, format='WAV', subtype='PCM_16')
                         wav_bytes = wav_io.getvalue()
                         
-                        # STT inference
+                        # STT inference (Pass the log publisher to the transcribe function)
                         print("Transcribing (LuxASR)...")
-                        text = stt_luxasr.transcribe(wav_bytes)
+                        text = stt_luxasr.transcribe(wav_bytes, log_publisher=node.log_publisher)
+                        
                         if not text:
                             print("Failed to transcribe or no speech detected.")
                         else:

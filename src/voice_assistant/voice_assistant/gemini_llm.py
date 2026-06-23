@@ -1,7 +1,7 @@
 import os
 import sys
-import threading
 import json
+import time
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -9,14 +9,6 @@ from std_msgs.msg import String
 
 from .tomtom_api import reverse_geocode, search_nearby_poi
 from .weather_api import get_weather_forecast
-
-# Ensure the simulation directory is accessible for the navigation module
-current_dir = os.path.dirname(os.path.abspath(__file__))
-simulation_dir = os.path.abspath(os.path.join(current_dir, "../../../simulation"))
-if simulation_dir not in sys.path:
-    sys.path.append(simulation_dir)
-
-from navigate_to_point import navigate_to_gnss
 
 load_dotenv()
 
@@ -72,8 +64,9 @@ class GeminiAssistant:
         self.client = genai.Client(
             api_key=os.environ.get("GEMINI_API_KEY"),
         )
-        self.model = "gemini-3.5-flash"
+        self.model = "gemini-2.5-flash"
         self.log_publisher = None
+        self.nav_publisher = None
         
         instruction = (
             "You are Junior, a context-aware Luxembourgish voice assistant inside an autonomous vehicle. "
@@ -91,90 +84,130 @@ class GeminiAssistant:
             )
         )
 
+    def _send_message_with_retry(self, message, max_retries=3, delay=5):
+        for attempt in range(max_retries):
+            try:
+                return self.chat.send_message(message)
+            except Exception as e:
+                # Retry if we hit a 503 unavailability error
+                if '503' in str(e) and attempt < max_retries - 1:
+                    print(f"System: Model unavailable (503). Retrying in {delay} seconds... (Attempt {attempt + 1}/{max_retries})")
+                    time.sleep(delay)
+                else:
+                    raise
+
     def process_prompt(self, text, ros_node):
         # Initialize ROS 2 publisher for UI logging if not already created
-        if self.log_publisher is None and ros_node is not None:
-            self.log_publisher = ros_node.create_publisher(String, '/assistant/logs', 10)
+        if ros_node is not None:
+            if self.log_publisher is None:
+                self.log_publisher = ros_node.create_publisher(String, '/assistant/logs', 10)
+            if self.nav_publisher is None:
+                self.nav_publisher = ros_node.create_publisher(String, '/assistant/navigation_goal', 10)
 
-        response = self.chat.send_message(text)
+        response = self._send_message_with_retry(text)
         
-        while response.function_calls:
-            function_call = response.function_calls[0]
-            func_name = function_call.name
+        # Process any tool calls requested by the model
+        while response and getattr(response, 'function_calls', None):
+            function_responses = []
             
-            # Safely extract arguments
-            args = function_call.args if hasattr(function_call, "args") else {}
-            if not isinstance(args, dict):
-                args = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
+            # Execute requested tools
+            for function_call in response.function_calls:
+                func_name = function_call.name
                 
-            print(f"System: Executing tool '{func_name}' with args: {args}")
-            
-            tool_result = {}
-            if func_name == "get_current_location":
-                if ros_node.current_gnss is not None:
-                    lat = ros_node.current_gnss.lat
-                    lon = ros_node.current_gnss.lon
-                    address = reverse_geocode(lat, lon)
-                    tool_result = {"latitude": lat, "longitude": lon, "address": address}
-                else:
-                    tool_result = {"error": "GPS signal lost or not yet received."}
+                # Safely extract arguments
+                args = function_call.args if hasattr(function_call, "args") else {}
+                if not isinstance(args, dict):
+                    args = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
                     
-            elif func_name == "get_destination":
-                tool_result = {"destination_info": "We are routing to Kirchberg Campus."} 
+                print(f"System: Executing tool '{func_name}' with args: {args}")
                 
-            elif func_name == "search_nearby_poi":
-                query = args.get("query", "")
-                if ros_node.current_gnss is not None:
-                    lat = ros_node.current_gnss.lat
-                    lon = ros_node.current_gnss.lon
-                    poi_results = search_nearby_poi(query, lat, lon)
-                    tool_result = {"pois": poi_results, "query": query}
-                else:
-                    tool_result = {"error": "GPS signal lost. Cannot search for POIs."}
+                tool_result = {}
+                if func_name == "get_current_location":
+                    if ros_node.current_gnss is not None:
+                        lat = ros_node.current_gnss.lat
+                        lon = ros_node.current_gnss.lon
+                        address = reverse_geocode(lat, lon)
+                        tool_result = {"latitude": lat, "longitude": lon, "address": address}
+                    else:
+                        tool_result = {"error": "GPS signal lost or not yet received."}
+                        
+                elif func_name == "get_destination":
+                    tool_result = {"destination_info": "We are routing to Kirchberg Campus."} 
                     
-            elif func_name == "start_navigation":
-                target_lat = args.get("latitude")
-                target_lon = args.get("longitude")
-                dest_name = args.get("destination_name")
+                elif func_name == "search_nearby_poi":
+                    query = args.get("query", "")
+                    if ros_node.current_gnss is not None:
+                        lat = ros_node.current_gnss.lat
+                        lon = ros_node.current_gnss.lon
+                        poi_results = search_nearby_poi(query, lat, lon)
+                        tool_result = {"pois": poi_results, "query": query}
+                    else:
+                        tool_result = {"error": "GPS signal lost. Cannot search for POIs."}
+                        
+                elif func_name == "start_navigation":
+                    target_lat = args.get("latitude")
+                    target_lon = args.get("longitude")
+                    dest_name = args.get("destination_name")
+                    
+                    if target_lat and target_lon:
+                        print(f"System: Requesting vehicle to route to {dest_name}...")
+                        
+                        # publish the navigation goal to the ROS 2 topic for the CARLA Navigator Node
+                        if self.nav_publisher is not None:
+                            goal_msg = String()
+                            goal_msg.data = json.dumps({
+                                "latitude": target_lat,
+                                "longitude": target_lon,
+                                "destination_name": dest_name
+                            })
+                            self.nav_publisher.publish(goal_msg)
+                            tool_result = {"status": "success", "message": f"Navigation coordinates broadcasted for {dest_name}."}
+                        else:
+                            tool_result = {"error": "ROS 2 publisher not initialized."}
+                    else:
+                        tool_result = {"error": "Invalid GPS coordinates provided."}
+                        
+                elif func_name == "get_weather_forecast":
+                    if ros_node.current_gnss is not None:
+                        lat = ros_node.current_gnss.lat
+                        lon = ros_node.current_gnss.lon
+                        weather_result = get_weather_forecast(lat, lon)
+                        tool_result = {"weather": weather_result}
+                    else:
+                        tool_result = {"error": "GPS signal lost. Cannot fetch weather."}
                 
-                if target_lat and target_lon:
-                    print(f"System: Engaging autopilot to {dest_name} (Lat: {target_lat:.6f}, Lon: {target_lon:.6f}).")
-                    nav_thread = threading.Thread(
-                        target=navigate_to_gnss, 
-                        args=(target_lat, target_lon),
-                        daemon=True
-                    )
-                    nav_thread.start()
-                    tool_result = {"status": "success", "message": f"Autopilot engaged for {dest_name}."}
-                else:
-                    tool_result = {"error": "Invalid GPS coordinates provided."}
-                    
-            elif func_name == "get_weather_forecast":
-                if ros_node.current_gnss is not None:
-                    lat = ros_node.current_gnss.lat
-                    lon = ros_node.current_gnss.lon
-                    weather_result = get_weather_forecast(lat, lon)
-                    tool_result = {"weather": weather_result}
-                else:
-                    tool_result = {"error": "GPS signal lost. Cannot fetch weather."}
-            
-            # Publish log data to ROS 2 for the Streamlit dashboard
-            if self.log_publisher is not None:
-                log_data = {
-                    "action": func_name,
-                    "arguments": args,
-                    "result": tool_result
-                }
-                msg = String()
-                msg.data = json.dumps(log_data)
-                self.log_publisher.publish(msg)
+                # Publish log data to ROS 2 for the Streamlit dashboard
+                if self.log_publisher is not None:
+                    log_data = {
+                        "action": func_name,
+                        "arguments": args,
+                        "result": tool_result
+                    }
+                    msg = String()
+                    msg.data = json.dumps(log_data)
+                    self.log_publisher.publish(msg)
 
-            # Send the tool result back to Gemini
-            response = self.chat.send_message(
-                types.Part.from_function_response(
-                    name=func_name,
-                    response={"result": tool_result}
+                # Map result to the format expected by the model
+                function_responses.append(
+                    types.Part.from_function_response(
+                        name=func_name,
+                        response={"result": tool_result}
+                    )
                 )
-            )
+
+            response = self._send_message_with_retry(function_responses)
+
+        # Extract final text or fallback to default error
+        final_text = getattr(response, "text", "Entschëllegt, et gouf e Problem beim Kommunizéieren.") if response else "Entschëllegt."
+
+        # Publish the final response text to the UI
+        if self.log_publisher is not None and final_text:
+            log_data = {
+                "type": "response",
+                "text": final_text
+            }
+            msg = String()
+            msg.data = json.dumps(log_data)
+            self.log_publisher.publish(msg)
             
-        return response.text
+        return final_text
