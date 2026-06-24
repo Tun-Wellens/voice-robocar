@@ -2,6 +2,11 @@
 
 This repository contains the software stack for integrating a context-aware Luxembourgish Voice Assistant into **Junior**, the 360Lab's physical autonomous research vehicle.
 
+The repository includes:
+- **Voice Assistant:** The core LLM-based agent processing speech and executing vehicle commands.
+- **Dashboard:** A real-time Streamlit web app displaying live car telemetry and the chat/action timeline.
+- **Simulation:** CARLA simulator integration nodes to test the voice assistant in a virtual 3D environment.
+
 ## Prerequisites
 
 1. **Docker & Docker Compose:** Ensure you have Docker installed on your host machine.
@@ -23,7 +28,7 @@ Copy the template environment file and add your API keys:
 ```bash
 cp .env.example .env
 nano .env
-
+```
 **3. Build the Docker Image**
 Build the container using Docker Compose:
 ```bash
@@ -34,25 +39,22 @@ docker compose -f docker/docker-compose.yml build
 
 ## Running the Assistant
 
+**1. Start the Voice Assistant**
 To start the voice assistant with full access to your host's microphone, speakers, and ROS 2 network, run:
 
 ```bash
 docker compose -f docker/docker-compose.yml run --rm voice-assistant
 ```
 
----
-
-## Testing with Mock Data (CLI)
-
-Since the assistant relies on LLM function calling to answer questions about the car's state, you can mock the real vehicle's behavior by publishing data directly to the local ROS 2 network.
-
-Open a **new terminal** and use `docker exec` to enter the running container, then use the following commands to simulate the car's sensors:
-
-### Mocking the Current Location (GNSS)
-
+**2. Start the Live Dashboard**
+To view the live tracking map and junior's response timeline, open a new terminal and run:
 ```bash
-ros2 topic pub /robocar/gnss robocar_msgs/msg/GNSS "{lat: 49.626, lon: 6.159, altitude: 300.0}"
+cd dashboard
+streamlit run app.py
 ```
+
+**3. Run CARLA Simulation**
+If you want to connect the voice assistant to a virtual CARLA environment refer to the step-by-step guide inside `simulation/README.md`.
 
 ---
 
