@@ -62,6 +62,30 @@ vehicle_tools = [
             types.FunctionDeclaration(
                 name="turn_on_hazard_lights",
                 description="Turns on the vehicle's hazard lights (warning blinkers).",
+            ),
+            types.FunctionDeclaration(
+                name="turn_off_headlights",
+                description="Turns off the vehicle's headlights.",
+            ),
+            types.FunctionDeclaration(
+                name="turn_off_hazard_lights",
+                description="Turns off the vehicle's hazard lights (warning blinkers).",
+            ),
+            types.FunctionDeclaration(
+                name="turn_on_interior_light",
+                description="Turns on the vehicle's interior cabin light.",
+            ),
+            types.FunctionDeclaration(
+                name="turn_off_interior_light",
+                description="Turns off the vehicle's interior cabin light.",
+            ),
+            types.FunctionDeclaration(
+                name="open_doors",
+                description="Opens all doors of the vehicle.",
+            ),
+            types.FunctionDeclaration(
+                name="close_doors",
+                description="Closes all doors of the vehicle.",
             )
         ]
     )
@@ -79,11 +103,17 @@ class GeminiAssistant:
         
         instruction = (
             "You are Junior, a context-aware Luxembourgish voice assistant inside an autonomous vehicle. "
-            "Always respond in Luxembourgish. "
-            "If the user asks to drive to a specific place, you must first call 'search_nearby_poi' "
-            "to find its coordinates, and then immediately call 'start_navigation' using those coordinates. "
-            "If the user asks to control the vehicle (like turning on lights or hazard lights), use the appropriate tool. "
-            "Confirm to the user once an action is taken or autopilot is engaged."
+            "Always respond in Luxembourgish.\n\n"
+            "Routing & Navigation:\n"
+            "- When asked to drive somewhere, always call 'search_nearby_poi' first to find the coordinates.\n"
+            "- The POI search API works best with standard terms (English/French). If someone asks for a generic place "
+            "in Luxembourgish, translate the query term to English or French. "
+            "If they ask for a specific brand name or exact location, keep it exactly as spoken.\n"
+            "- If the first search returns no results, try again with a different synonym before giving up.\n"
+            "- Only call 'start_navigation' after you have successfully found a valid GPS coordinate.\n\n"
+            "Vehicle Commands:\n"
+            "- You can control the car's lights and doors using the provided tools.\n\n"
+            "Always confirm what you've done to the user in a friendly way (e.g., confirming autopilot has started or lights are on)."
         )
         
         self.chat = self.client.chats.create(
@@ -203,6 +233,60 @@ class GeminiAssistant:
                         cmd_msg.data = json.dumps({"command": "hazards_on"})
                         self.cmd_publisher.publish(cmd_msg)
                         tool_result = {"status": "success", "message": "Hazard lights turned on."}
+                    else:
+                        tool_result = {"error": "ROS 2 publisher not initialized."}
+
+                elif func_name == "turn_off_headlights":
+                    if self.cmd_publisher is not None:
+                        cmd_msg = String()
+                        cmd_msg.data = json.dumps({"command": "headlights_off"})
+                        self.cmd_publisher.publish(cmd_msg)
+                        tool_result = {"status": "success", "message": "Headlights turned off."}
+                    else:
+                        tool_result = {"error": "ROS 2 publisher not initialized."}
+
+                elif func_name == "turn_off_hazard_lights":
+                    if self.cmd_publisher is not None:
+                        cmd_msg = String()
+                        cmd_msg.data = json.dumps({"command": "hazards_off"})
+                        self.cmd_publisher.publish(cmd_msg)
+                        tool_result = {"status": "success", "message": "Hazard lights turned off."}
+                    else:
+                        tool_result = {"error": "ROS 2 publisher not initialized."}
+
+                elif func_name == "turn_on_interior_light":
+                    if self.cmd_publisher is not None:
+                        cmd_msg = String()
+                        cmd_msg.data = json.dumps({"command": "interior_on"})
+                        self.cmd_publisher.publish(cmd_msg)
+                        tool_result = {"status": "success", "message": "Interior lights turned on."}
+                    else:
+                        tool_result = {"error": "ROS 2 publisher not initialized."}
+                        
+                elif func_name == "turn_off_interior_light":
+                    if self.cmd_publisher is not None:
+                        cmd_msg = String()
+                        cmd_msg.data = json.dumps({"command": "interior_off"})
+                        self.cmd_publisher.publish(cmd_msg)
+                        tool_result = {"status": "success", "message": "Interior lights turned off."}
+                    else:
+                        tool_result = {"error": "ROS 2 publisher not initialized."}
+
+                elif func_name == "open_doors":
+                    if self.cmd_publisher is not None:
+                        cmd_msg = String()
+                        cmd_msg.data = json.dumps({"command": "open_doors"})
+                        self.cmd_publisher.publish(cmd_msg)
+                        tool_result = {"status": "success", "message": "Doors opened."}
+                    else:
+                        tool_result = {"error": "ROS 2 publisher not initialized."}
+
+                elif func_name == "close_doors":
+                    if self.cmd_publisher is not None:
+                        cmd_msg = String()
+                        cmd_msg.data = json.dumps({"command": "close_doors"})
+                        self.cmd_publisher.publish(cmd_msg)
+                        tool_result = {"status": "success", "message": "Doors closed."}
                     else:
                         tool_result = {"error": "ROS 2 publisher not initialized."}
                 

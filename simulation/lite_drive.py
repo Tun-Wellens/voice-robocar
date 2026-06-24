@@ -17,12 +17,12 @@ class CustomGnssPublisher(Node):
         super().__init__('custom_gnss_publisher')
         self.pub = self.create_publisher(GNSS, '/sensors/gnss', 10)
         self.cmd_sub = self.create_subscription(String, '/assistant/vehicle_commands', self.cmd_callback, 10)
-        self.pending_light_command = None
+        self.pending_command = None
         
     def cmd_callback(self, msg):
         try:
             data = json.loads(msg.data)
-            self.pending_light_command = data.get("command")
+            self.pending_command = data.get("command")
         except:
             pass
         
@@ -97,7 +97,7 @@ def main():
 
     # Spawn vehicle
     spawn_points = carla_map.get_spawn_points()
-    car_bp = world.get_blueprint_library().filter('vehicle.tesla.model3')[0]
+    car_bp = world.get_blueprint_library().filter('vehicle.lincoln.mkz_2020')[0]
     car_bp.set_attribute('role_name', 'ego_vehicle') 
     
     vehicle = world.try_spawn_actor(car_bp, spawn_points[0])
@@ -133,14 +133,28 @@ def main():
                 vehicle.apply_control(control)
 
             # Check for incoming commands from the Voice Assistant
-            if ros_node.pending_light_command:
-                cmd = ros_node.pending_light_command
+            if ros_node.pending_command:
+                cmd = ros_node.pending_command
                 current_lights = vehicle.get_light_state()
+                
                 if cmd == "headlights_on":
                     vehicle.set_light_state(carla.VehicleLightState(current_lights | carla.VehicleLightState.Position | carla.VehicleLightState.LowBeam))
+                elif cmd == "headlights_off":
+                    vehicle.set_light_state(carla.VehicleLightState(current_lights & ~carla.VehicleLightState.Position & ~carla.VehicleLightState.LowBeam))
                 elif cmd == "hazards_on":
                     vehicle.set_light_state(carla.VehicleLightState(current_lights | carla.VehicleLightState.LeftBlinker | carla.VehicleLightState.RightBlinker))
-                ros_node.pending_light_command = None
+                elif cmd == "hazards_off":
+                    vehicle.set_light_state(carla.VehicleLightState(current_lights & ~carla.VehicleLightState.LeftBlinker & ~carla.VehicleLightState.RightBlinker))
+                elif cmd == "interior_on":
+                    vehicle.set_light_state(carla.VehicleLightState(current_lights | carla.VehicleLightState.Interior))
+                elif cmd == "interior_off":
+                    vehicle.set_light_state(carla.VehicleLightState(current_lights & ~carla.VehicleLightState.Interior))
+                elif cmd == "open_doors":
+                    vehicle.open_door(carla.VehicleDoor.All)
+                elif cmd == "close_doors":
+                    vehicle.close_door(carla.VehicleDoor.All)
+                    
+                ros_node.pending_command = None
 
             if render_obj.surface is not None:
                 display.blit(render_obj.surface, (0, 0))
