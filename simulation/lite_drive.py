@@ -8,7 +8,9 @@ import json
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from std_msgs.msg import Header, String
+from sensor_msgs.msg import NavSatFix
 
 from robocar_msgs.msg import GNSS
 
@@ -17,7 +19,17 @@ class CustomGnssPublisher(Node):
         super().__init__('custom_gnss_publisher')
         self.pub = self.create_publisher(GNSS, '/sensors/gnss', 10)
         self.cmd_sub = self.create_subscription(String, '/assistant/vehicle_commands', self.cmd_callback, 10)
+        
+        # Subscribe to the ROS 2 Bridge GNSS topic
+        self.bridge_sub = self.create_subscription(
+            NavSatFix, 
+            '/carla/ego_vehicle/gnss', 
+            self.bridge_gnss_callback, 
+            qos_profile_sensor_data
+        )
+        
         self.pending_command = None
+        self.bridge_lat = None # Used to ensure bridge is online
         
     def cmd_callback(self, msg):
         try:
@@ -25,8 +37,15 @@ class CustomGnssPublisher(Node):
             self.pending_command = data.get("command")
         except:
             pass
+
+    def bridge_gnss_callback(self, msg):
+        self.bridge_lat = msg.latitude
         
     def publish_data(self, lat, lon, transform, vel, accel, ang_vel):
+        # not publish until the ROS 2 Bridge is online and sending data
+        if self.bridge_lat is None:
+            return
+
         msg = GNSS()
         msg.header = Header()
         msg.header.stamp = self.get_clock().now().to_msg()
@@ -105,6 +124,12 @@ def main():
         print("Error: Could not spawn vehicle!")
         return
 
+    # Spawn the GNSS sensor so the ROS 2 Bridge detects it
+    gnss_bp = world.get_blueprint_library().find('sensor.other.gnss')
+    gnss_bp.set_attribute('role_name', 'gnss')
+    gnss_sensor = world.spawn_actor(gnss_bp, carla.Transform(), attach_to=vehicle)
+
+    # Spawn Camera
     cam_bp = world.get_blueprint_library().find('sensor.camera.rgb')
     cam_bp.set_attribute('image_size_x', '800')
     cam_bp.set_attribute('image_size_y', '600')
@@ -175,11 +200,14 @@ def main():
             rclpy.spin_once(ros_node, timeout_sec=0)
 
             # RENDER HUD 
-            hud_lines = [
-                f" LOC:  x={loc.x:7.1f}, y={loc.y:7.1f}, z={loc.z:5.1f} ",
-                f" GNSS: Lat {true_lat:.6f}, Lon {true_lon:.6f} " 
-            ]
-            
+            if ros_node.bridge_lat is not None:
+                hud_lines = [
+                    f" LOC:  x={loc.x:7.1f}, y={loc.y:7.1f}, z={loc.z:5.1f} ",
+                    f" GNSS: Lat {true_lat:.6f}, Lon {true_lon:.6f} " 
+                ]
+            else:
+                hud_lines = [" WAITING FOR ROS 2 BRIDGE GNSS... "]
+
             y_offset = 10
             for line in hud_lines:
                 text_surface = font.render(line, True, (255, 255, 255))
@@ -193,6 +221,7 @@ def main():
     finally:
         print("\nCleaning up...")
         camera.destroy()
+        gnss_sensor.destroy()
         vehicle.destroy()
         pygame.quit()
         
