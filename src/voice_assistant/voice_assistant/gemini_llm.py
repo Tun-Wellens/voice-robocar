@@ -7,7 +7,7 @@ from google import genai
 from google.genai import types
 from std_msgs.msg import String
 
-from .tomtom_api import reverse_geocode, search_nearby_poi
+from .poi_api import reverse_geocode, search_nearby_poi
 from .weather_api import get_weather_forecast
 
 load_dotenv()

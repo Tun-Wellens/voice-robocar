@@ -14,9 +14,9 @@ from sensor_msgs.msg import NavSatFix
 
 from robocar_msgs.msg import GNSS
 
-class CustomGnssPublisher(Node):
+class CarlaHardwareAbstraction(Node):
     def __init__(self):
-        super().__init__('custom_gnss_publisher')
+        super().__init__('carla_hardware_abstraction')
         self.pub = self.create_publisher(GNSS, '/sensors/gnss', 10)
         self.cmd_sub = self.create_subscription(String, '/assistant/vehicle_commands', self.cmd_callback, 10)
         
@@ -95,7 +95,7 @@ def camera_callback(image, render_object):
 def main():
     
     rclpy.init()
-    ros_node = CustomGnssPublisher()
+    ros_node = CarlaHardwareAbstraction()
 
     pygame.init()
     pygame.font.init()

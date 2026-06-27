@@ -11,7 +11,7 @@ The repository includes:
 
 1. **Docker & Docker Compose:** Ensure you have Docker installed on your host machine.
 2. **Audio Hardware:** A working microphone and speaker connected to the host machine.
-3. **API Keys:** You will need an API key for Google Gemini and TomTom.
+3. **API Keys:** You will need an API key for Google Gemini, Google Places  and weatherapi.com.
 
 ---
 
