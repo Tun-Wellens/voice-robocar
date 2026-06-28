@@ -34,8 +34,6 @@ def build_custom_astar_path(start_wp, end_loc, world):
             best_partial_path = path
 
         if dist_to_goal < 5.0:
-            for p, _ in path:
-                world.debug.draw_point(p.transform.location, size=0.15, color=carla.Color(0,0,255), life_time=0.0)
             return path
             
         next_wps = current_wp.next(2.0)
@@ -78,9 +76,6 @@ def navigate_to(target_x, target_y):
     start_wp = carla_map.get_waypoint(start_loc, project_to_road=True, lane_type=carla.LaneType.Driving)
     
     end_loc = carla.Location(x=target_x, y=target_y, z=0.0)
-    end_loc_vis = carla.Location(x=end_loc.x, y=end_loc.y, z=2.0)
-    world.debug.draw_point(end_loc_vis, size=0.5, color=carla.Color(255, 0, 0), life_time=10.0)
-    world.debug.draw_string(end_loc_vis, "DESTINATION", draw_shadow=False, color=carla.Color(255, 0, 0), life_time=0.0)
 
     print("Calculating Custom A* Route...")
     custom_route = build_custom_astar_path(start_wp, end_loc, world)

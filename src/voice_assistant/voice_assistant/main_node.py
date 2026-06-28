@@ -127,7 +127,7 @@ def main(args=None):
                     # The prediction dict is {model_name: score}
                     score = list(prediction.values())[0]
                     print(f"Listening... Model Score: {score:.4f}", end='\r')
-                    if score > 0.05:
+                    if score > 0.01:
                         print("\n[Wake Word Detected!] Listening for command...")
                         play_ding()
                         state = "RECORDING"
